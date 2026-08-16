@@ -162,15 +162,47 @@ uv run python scripts/verify_live.py
 
 ## 容器
 
+本节使用两台位于同一企业内网的机器说明部署方式：
+
+- **机器 A（服务端）**：运行 Docker 和 `vitos-m365-mcp` 容器，并通过内网地址向其他机器提供 MCP 服务。
+- **机器 B（客户端）**：运行 AI Agent 或 MCP Client，通过机器 A 的内网 IP 或域名访问 MCP 服务。
+
+下面以机器 A 的内网 IP 为 `10.10.1.20`、MCP 端口为 `8001` 为例。实际部署时，应替换为机器 A 的真实内网 IP 或域名。
+
+首先确保 `.env` 中的 MCP 地址与机器 B 实际访问的地址完全一致。例如，机器 A 的内网地址为 `10.10.1.20`：
+
+```dotenv
+MCP_HOST=0.0.0.0
+MCP_PORT=8001
+MCP_PATH=/mcp
+MCP_RESOURCE_URL=http://10.10.1.20:8001/mcp
+```
+
+如果企业内网提供 DNS，应优先使用稳定的内网域名，例如 `http://mcp-a.corp.internal:8001/mcp`。`0.0.0.0` 只用于监听，不能出现在 `MCP_RESOURCE_URL` 中。
+
+构建镜像并将容器端口发布到机器 A 的所有网络接口：
+
 ```bash
 docker build -t vitos-m365-mcp:local .
+
 docker run --rm \
+  --name vitos-m365-mcp \
   --env-file .env \
-  -p 127.0.0.1:8001:8001 \
+  -p 0.0.0.0:8001:8001 \
   vitos-m365-mcp:local
 ```
 
+确保机器 A 的防火墙允许机器 B 或企业 Agent 所在网段访问 TCP 8001。机器 B 可以通过以下命令验证网络连通性和服务状态：
+
+```bash
+curl http://10.10.1.20:8001/health
+```
+
+预期返回 `{"status":"ok"}`。随后应使用同一个内网 IP 或域名，将 Agent 的 MCP 地址配置为 `http://10.10.1.20:8001/mcp`。
+
 镜像以非 root 用户运行。绝不要将 `.env`、MCP 凭据、Token M 或 Token G 写入镜像。
+
+以上方式通过企业内网 HTTP 直接暴露 MCP 服务，仅适合受控环境中的端到端验证。Bearer Token 和文档内容在 HTTP 链路上不会被加密，正式部署应切换到 HTTPS。
 
 ## 参考资料
 
