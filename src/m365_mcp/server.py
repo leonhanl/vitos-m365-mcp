@@ -178,10 +178,14 @@ def main() -> None:
         settings.mcp_port,
         settings.mcp_path,
     )
-    if settings.mcp_host not in {"127.0.0.1", "localhost", "::1"}:
+    resource_host = settings.mcp_resource_url.host
+    if (
+        settings.mcp_resource_url.scheme != "https"
+        and resource_host not in {"127.0.0.1", "localhost", "::1"}
+    ):
         logger.warning(
-            "MCP server is listening beyond localhost; terminate TLS at a trusted "
-            "ingress and ensure MCP_RESOURCE_URL uses the public HTTPS endpoint"
+            "MCP_RESOURCE_URL uses HTTP for a non-local endpoint; terminate TLS at "
+            "a trusted ingress and configure the public HTTPS MCP endpoint"
         )
     try:
         import uvicorn

@@ -37,6 +37,8 @@ MCP 端点还实现了 OAuth Protected Resource Metadata（RFC 9728）：
 
 PDF 解析和写操作不在当前范围内。
 
+当前版本仅支持单租户 Microsoft Entra、全球版 Entra/Graph 端点和 client secret 形式的服务端凭据。
+
 ## Microsoft Entra 配置
 
 ### 1. MCP Resource Server
@@ -48,13 +50,13 @@ PDF 解析和写操作不在当前范围内。
 3. 在 **Expose an API** 中，将 Application ID URI 设置为 `api://<ENTRA_MCP_CLIENT_ID>`。
 4. 创建名为 `access_as_user` 的委托 scope。对于内部服务，**Who can consent** 通常应设置为 **Admins only**。
 5. 在 **API permissions** 中添加 Microsoft Graph 委托权限 `Files.Read.All`，并授予租户级管理员同意。
-6. 为本地开发创建 client secret。该 secret 只属于这个 MCP Server，用于执行从 MCP 到 Graph 的 OBO 交换。生产环境应使用证书或 workload identity。
+6. 创建 client secret。该 secret 只属于这个 MCP Server，用于执行从 MCP 到 Graph 的 OBO 交换。当前版本仅实现 client secret；生产部署应通过 secret manager 安全注入并定期轮换。
 
-不要为该服务复用 Work Assistant API 或浏览器的 App Registration。发送到 `/mcp` 的 access token 必须以这个 MCP App Registration 的 client ID 作为 `aud` claim。
+不要复用属于其他 API 的 resource App Registration。发送到 `/mcp` 的 access token 必须以这个 MCP App Registration 的 client ID 作为 `aud` claim。
 
 ### 2. 真实验证客户端
 
-Microsoft Entra 不提供 Dynamic Client Registration，因此真实的交互式测试需要一个预先注册的 public client。创建另一个名为 `vitos-m365-mcp-live-test` 的单租户 App Registration：
+本项目使用预先注册的 public client 进行真实交互式测试。创建另一个名为 `vitos-m365-mcp-live-test` 的单租户 App Registration：
 
 1. 在 **Authentication → Advanced settings** 中启用 **Allow public client flows**。
 2. 不要创建 client secret。
@@ -63,16 +65,16 @@ Microsoft Entra 不提供 Dynamic Client Registration，因此真实的交互式
 
 这个 App Registration 只供 `scripts/verify_live.py` 中的 Device Code 登录使用，不属于部署后的 MCP 服务。
 
-### 3. 后续接入 Agent
+### 3. MCP Client 接入
 
-当前阶段不会修改 Agent。后续需要为 Agent 的 App Registration 添加 MCP `access_as_user` 委托权限，并在 MCP App Registration 中预授权该 Agent。之后，Agent 会将自己的 API Token 交换为 Token M，再把 Token M 发送给本服务。在 Agent 代码完成相应修改前，当前 Agent 无法调用这个受保护的 MCP 端点。
+为 MCP Client 的 App Registration 添加 MCP `access_as_user` 委托权限，并根据租户策略授予管理员同意或在 MCP App Registration 中预授权该客户端。客户端获取面向 `api://<ENTRA_MCP_CLIENT_ID>/access_as_user` 的 Token M 后，必须在每个 MCP HTTP 请求的 `Authorization: Bearer <Token M>` header 中发送它。
 
 ## 配置
 
 将 `.env.example` 复制为 `.env`，然后完成配置：
 
 ```dotenv
-MCP_HOST=127.0.0.1
+MCP_HOST=0.0.0.0
 MCP_PORT=8001
 MCP_PATH=/mcp
 MCP_RESOURCE_URL=http://127.0.0.1:8001/mcp
@@ -84,6 +86,8 @@ ENTRA_REQUIRED_SCOPE=access_as_user
 ```
 
 `MCP_RESOURCE_URL` 是对外可见的准确 MCP 端点地址，用于 Resource Metadata 和 `WWW-Authenticate`。在部署环境中，即使进程监听的是内部 HTTP 地址，这里也必须配置公开的 HTTPS URL。
+
+服务默认监听所有网络接口（`0.0.0.0`），以便在容器和托管平台中接收来自 ingress 的流量。`0.0.0.0` 只用于监听，不能作为 `MCP_RESOURCE_URL`；如果只希望在本机访问，可以将 `MCP_HOST` 改为 `127.0.0.1`。
 
 向 MCP Client 公布的 scope 默认为：
 
@@ -99,14 +103,21 @@ ENTRA_MCP_SCOPE=api://mcp.internal.example/access_as_user
 
 ## 本地开发
 
-需要 Python 3.11 或更高版本：
+需要 [uv](https://docs.astral.sh/uv/getting-started/installation/) 和 Python 3.13 或更高版本。`uv` 可以自动安装符合项目要求的 Python：
 
 ```bash
+uv python install 3.13
 uv sync --locked --extra dev
 set -a
 source .env
 set +a
 uv run vitos-m365-mcp
+```
+
+启动后可检查公开存活端点：
+
+```bash
+curl http://127.0.0.1:8001/health
 ```
 
 运行自动化测试：
@@ -120,6 +131,8 @@ uv run pytest
 ## 真实端到端验证
 
 该仓库包含一个独立的真实验证脚本。它只使用 MSAL 通过 Device Code Flow 获取真实的 Token M，随后使用官方 MCP Inspector CLI 完成 MCP 初始化、`tools/list` 以及一次真实的 `search_sharepoint` 调用。最后一次调用必须完整执行 Token M → OBO → Token G → Microsoft Graph 链路。
+
+除 Python 开发环境外，真实验证还需要已安装 Node.js 和 `npx`。
 
 在终端 A 中保持 MCP Server 运行，然后在终端 B 中执行：
 
@@ -141,7 +154,7 @@ uv run python scripts/verify_live.py
 5. `npx -y @modelcontextprotocol/inspector@2.2.0` 列出真实 MCP tools。
 6. Inspector 调用 `search_sharepoint`；MCP Server 执行真实 OBO，并由 Graph 返回当前登录用户的真实响应。
 
-Token M 不会被打印，也不会作为命令行参数传递。它只会被写入权限模式为 `0600` 的临时 Inspector 配置文件，并在 `finally` 块中删除。
+脚本不会主动打印 Token M，也不会将它作为命令行参数传递。它只会被写入权限模式为 `0600` 的临时 Inspector 配置文件，并在 `finally` 块中删除。
 
 默认的 `MCP_INSPECTOR_PACKAGE` 固定为验证该流程时使用的 CLI 版本。升级时应明确修改版本，并重新执行真实验证后再更新该基准。
 
@@ -161,7 +174,11 @@ docker run --rm \
 
 ## 参考资料
 
-- [MCP 授权规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+- [MCP 授权规范（当前 SDK 对应的 2025-11-25 版本）](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
 - [MCP Inspector](https://github.com/modelcontextprotocol/inspector)
 - [Microsoft identity platform OBO 流程](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-on-behalf-of-flow)
 - [使用 Microsoft Entra 配置 MCP Server 授权](https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-mcp)
+
+## License
+
+本项目使用 [MIT License](LICENSE)。

@@ -17,7 +17,7 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    mcp_host: str = Field(default="127.0.0.1", validation_alias="MCP_HOST")
+    mcp_host: str = Field(default="0.0.0.0", validation_alias="MCP_HOST")
     mcp_port: int = Field(default=8001, validation_alias="MCP_PORT")
     mcp_path: str = Field(default="/mcp", validation_alias="MCP_PATH")
     mcp_resource_url: AnyHttpUrl = Field(

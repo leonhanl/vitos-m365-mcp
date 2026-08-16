@@ -31,7 +31,7 @@ def test_settings_defaults_and_derived_scope(monkeypatch: pytest.MonkeyPatch) ->
 
     assert settings.entra_tenant_id == UUID(TENANT_ID)
     assert settings.entra_mcp_client_id == UUID(MCP_CLIENT_ID)
-    assert settings.mcp_host == "127.0.0.1"
+    assert settings.mcp_host == "0.0.0.0"
     assert settings.mcp_port == 8001
     assert settings.mcp_path == "/mcp"
     assert str(settings.mcp_resource_url) == "http://127.0.0.1:8001/mcp"
