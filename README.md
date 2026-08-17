@@ -183,13 +183,13 @@ MCP_RESOURCE_URL=http://10.10.1.20:8001/mcp
 构建镜像并将容器端口发布到机器 A 的所有网络接口：
 
 ```bash
-docker build -t vitos-m365-mcp:local .
+docker build -t vitos-m365-mcp:latest .
 
 docker run --rm \
   --name vitos-m365-mcp \
   --env-file .env \
   -p 0.0.0.0:8001:8001 \
-  vitos-m365-mcp:local
+  vitos-m365-mcp:latest
 ```
 
 确保机器 A 的防火墙允许机器 B 或企业 Agent 所在网段访问 TCP 8001。机器 B 可以通过以下命令验证网络连通性和服务状态：
