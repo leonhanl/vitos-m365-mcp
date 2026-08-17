@@ -185,10 +185,11 @@ MCP_RESOURCE_URL=http://10.10.1.20:8001/mcp
 ```bash
 docker build -t vitos-m365-mcp:latest .
 
-docker run --rm \
+docker run -d \
   --name vitos-m365-mcp \
   --env-file .env \
   -p 0.0.0.0:8001:8001 \
+  --restart unless-stopped \
   vitos-m365-mcp:latest
 ```
 
